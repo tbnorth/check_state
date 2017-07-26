@@ -6,14 +6,20 @@ Terry Brown, TerryNBrown@gmail.com, Mon Jul 24 15:13:32 2017
 """
 
 import argparse
+import getpass
 import json
 import os
 import shlex
+import shutil
 import sqlite3
+import tempfile
 import time
 
 from collections import defaultdict
 from subprocess import Popen, PIPE
+
+# GLOBAL
+settings_dir = None  # set by tempfile.mkdtemp() in pull_settings()
 
 n3m_list = 'nnnmp0', 'pypanart', 'nnm2'
 
@@ -26,7 +32,7 @@ shelf = json.load(open(json_state_file))
 SETS = {
     'set': {
         'nearshore': {
-            'instances': {
+            'instance': {
                 'otter': {
                     'folders': [
                         "/mnt/edata/edata/+",
@@ -60,7 +66,7 @@ def check_paths(db, set_, instance):
     cur_path = None
     print_info(headers=True)
     states = []
-    for entry in db['set'][set_]['instances'][instance]['folders']:
+    for entry in db['set'][set_]['instance'][instance]['folders']:
         not_list = not isinstance(entry, (tuple, list))
         if not_list and os.path.basename(entry) == '+':
             # a new base path for relative paths
@@ -77,7 +83,6 @@ def check_paths(db, set_, instance):
                 raise Exception("Path '%s' is not a directory" % subdir)
             info = {
                 'set': set_, 'instance': instance, 'subdir': subdir,
-                'date': time.asctime(),
             }
             info.update(get_file_stats(subdir))
             if os.path.exists(os.path.join(subdir, '.git')):
@@ -177,6 +182,9 @@ def get_options(args=None):
 
     # modifications / validations go here
 
+    # fix MinGW shell mangling
+    opt.repo = opt.repo.replace('\\', '/').replace(':/', '://')
+
     return opt
 
 
@@ -195,7 +203,7 @@ def make_parser():
     info = []
     for set_ in SETS['set']:
         info.append("    %s" % set_)
-        for instance in SETS['set'][set_]['instances']:
+        for instance in SETS['set'][set_]['instance']:
             info.append("        %s" % instance)
     info = '\n'.join(info)
 
@@ -204,22 +212,19 @@ def make_parser():
         "Known sets / instances:\n\n" + info, formatter_class=Formatter
     )
 
-    # parser.add_argument("--<|foo|>", action='store_true',
-    #     help="<|help|>"
-    # )
+    repo = "git@gitlab.com:%s/check_state_info.git" % getpass.getuser()
+    parser.add_argument("--repo", default=repo,
+        help="Git repo. to store check_state settings / results"
+    )
+    parser.add_argument("--list", action='store_true',
+        help="List sets / instances from repo."
+    )
     parser.add_argument('set',
         help="Set to check"
     )
     parser.add_argument('instance',
         help="Instance to check"
     )
-
-#   #   requiredNamed = parser.add_argument_group('required named arguments')
-
-#   #   requiredNamed.add_argument("--config",
-    #     help="Path to config. file, e.g. 'something.conf.py'",
-    #     metavar='FILE'
-    # )
 
     return parser
 
@@ -249,14 +254,47 @@ def print_info(info=None, headers=False):
         
     ))
 
-def sizeof_fmt(num, suffix='B'):
-    # https://stackoverflow.com/a/1094933/1072212
-    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
-        if abs(num) < 1024.0:
-            return "%3.1f%s%s" % (num, unit, suffix)
-        num /= 1024.0
-    return "%.1f%s%s" % (num, 'Yi', suffix)
+def pull_settings(opt):
+    """fetch_settings - get settings from git
+    """
 
+    global settings_dir
+    settings_dir = tempfile.mkdtemp()
+    cmd = shlex.split('git clone "%s" "%s"' % (opt.repo, settings_dir))
+    proc = Popen(cmd)
+    proc.communicate()
+    sets = json.load(open(os.path.join(settings_dir, "check_state_settings.json")))
+    # expand ':foo' to sets['sub']['foo']
+    for set_ in sets['set']:
+        for instance in sets['set'][set_]['instance']:
+            folders = sets['set'][set_]['instance'][instance]['folders']
+            folders[:] = [
+                sets['sub'][i[1:]] if i[0] == ':' else i for i in folders
+            ]
+    others = os.path.join(settings_dir, "check_state_info.json")
+    if os.path.exists(others):
+        others = json.load(open(others))
+    else:
+        others = {'obs':{}}
+    return sets, others
+def push_settings(others):
+    """fetch_settings - get settings from git
+    """
+
+    global settings_dir
+    json.dump(
+        others,
+        open(os.path.join(settings_dir, "check_state_info.json"), 'w'),
+        indent=0
+    )
+    for cmd in [
+        'git -C "%s" add check_state_info.json',
+        'git -C "%s" commit -m "updated"',
+        'git -C "%s" push',
+    ]:
+        cmd = shlex.split(cmd % settings_dir)
+        proc = Popen(cmd)
+        proc.communicate()
 def time_fmt(t):
     """time_fmt - format time
 
@@ -267,21 +305,37 @@ def time_fmt(t):
 
     return time.strftime("%a %b %d, %H:%M", time.localtime(t))
 
+def sizeof_fmt(num, suffix='B'):
+    # https://stackoverflow.com/a/1094933/1072212
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'Yi', suffix)
+
 def main():
+    global settings_dir
+
     opt = get_options()
-    info = check_paths(SETS, opt.set, opt.instance)
-    shelf['obs'].setdefault(opt.set, {})[opt.instance] = {
+
+    sets, others = pull_settings(opt)
+
+    info = check_paths(sets, opt.set, opt.instance)
+    others['obs'].setdefault(opt.set, {})[opt.instance] = {
         'updated': time.time(),
         'subdirs': info,
     }
-    for instance in shelf['obs'][opt.set]:
+    for instance in others['obs'][opt.set]:
         if instance == opt.instance:
             continue
-        obs = shelf['obs'][opt.set][instance]
+        obs = others['obs'][opt.set][instance]
         print("%s %s" % (instance, time_fmt(obs['updated'])))
         for subdir in obs['subdirs']:
             print_info(subdir)
 
+    push_settings(others)
+    shutil.rmtree(settings_dir, ignore_errors=True)
+    exit()
 if __name__ == '__main__':
     try:
         main()
