@@ -6,6 +6,7 @@ Terry Brown, TerryNBrown@gmail.com, Mon Jul 24 15:13:32 2017
 """
 
 import argparse
+import json
 import os
 import shlex
 import sqlite3
@@ -14,7 +15,13 @@ import time
 from collections import defaultdict
 from subprocess import Popen, PIPE
 
-n3m_list = 'nnm2', 'nnnmp0', 'pypanart'
+n3m_list = 'nnnmp0', 'pypanart', 'nnm2'
+
+
+json_state_file = "check_state_info.json"
+if not os.path.exists(json_state_file):
+    json.dump({'obs':{}}, open(json_state_file, 'w'))
+shelf = json.load(open(json_state_file))
 
 SETS = {
     'set': {
@@ -23,15 +30,15 @@ SETS = {
                 'otter': {
                     'folders': [
                         "/mnt/edata/edata/+",
-                        n3m_list,
                         'tnbbib',
+                        n3m_list,
                     ],
                 },
                 'epadt': {
                     'folders': [
                         r"d:\repo\+",
-                        n3m_list,
                         'tnbbib',
+                        n3m_list,
                     ],
                 },
             },
@@ -40,11 +47,11 @@ SETS = {
 }
 
 
-def check_paths(db, set, instance):
+def check_paths(db, set_, instance):
     """check_paths - check that the paths for an instance exist
 
     :param dict db: set data
-    :param str set: set
+    :param str set_: set
     :param str instance: instance
     :return: True if all paths found
     :rtype: bool
@@ -52,7 +59,8 @@ def check_paths(db, set, instance):
 
     cur_path = None
     print_info(headers=True)
-    for entry in db['set'][set]['instances'][instance]['folders']:
+    states = []
+    for entry in db['set'][set_]['instances'][instance]['folders']:
         not_list = not isinstance(entry, (tuple, list))
         if not_list and os.path.basename(entry) == '+':
             # a new base path for relative paths
@@ -68,13 +76,16 @@ def check_paths(db, set, instance):
             if not os.path.isdir(subdir):
                 raise Exception("Path '%s' is not a directory" % subdir)
             info = {
-                'set': set, 'instance': instance, 'subdir': subdir,
+                'set': set_, 'instance': instance, 'subdir': subdir,
                 'date': time.asctime(),
             }
             info.update(get_file_stats(subdir))
             if os.path.exists(os.path.join(subdir, '.git')):
                 info.update(get_git_info(subdir))
             print_info(info)
+            states.append(info)
+
+    return states
 def get_concur(filepath=None):
     """
     get_concur - get DB connection and cursor - may create ~/.check_state
@@ -104,12 +115,15 @@ def get_file_stats(path):
     """
 
     info = defaultdict(lambda: 0)
-    for subpath, dirs_, files in os.walk(path):
+    for subpath, dirs, files in os.walk(path):
+        dirs[:] = [i for i in dirs if i != '.git']  # don't consider git files for latest
         for filename in files:
             info['file_count'] += 1
             filepath = os.path.join(subpath, filename)
             stat = os.stat(filepath)
-            info['latest'] = max(info['latest'], stat.st_mtime)
+            if info['latest'] < stat.st_mtime:
+                info['latest'] = stat.st_mtime
+                info['latest_file'] = filepath
             info['bytes'] += stat.st_size
     return info
 def get_git_info(path):
@@ -169,21 +183,36 @@ def get_options(args=None):
 
 
 
+class Formatter(
+    argparse.ArgumentDefaultsHelpFormatter,
+    argparse.RawDescriptionHelpFormatter): pass
+
 def make_parser():
     """build an argparse.ArgumentParser, don't call this directly,
        call get_options() instead.
     """
+
+    info = []
+    for set_ in SETS['set']:
+        info.append("    %s" % set_)
+        for instance in SETS['set'][set_]['instances']:
+            info.append("        %s" % instance)
+    info = '\n'.join(info)
+
     parser = argparse.ArgumentParser(
-        description="""Check the state of a set of related projects""",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        description="Check the state of a set of related projects\n"
+        "Known sets / instances:\n\n" + info, formatter_class=Formatter
     )
 
     # parser.add_argument("--<|foo|>", action='store_true',
     #     help="<|help|>"
     # )
-    # parser.add_argument('<|positional(s)|>', type=str, nargs='+',
-    #     help="<|help|>"
-    # )
+    parser.add_argument('set',
+        help="Set to check"
+    )
+    parser.add_argument('instance',
+        help="Instance to check"
+    )
 
 #   #   requiredNamed = parser.add_argument_group('required named arguments')
 
@@ -202,23 +231,60 @@ def print_info(info=None, headers=False):
     :param bool headers: don't print info, just print headers
     """
 
-    fmt = "% 10s % 6s % 4s % 20s"
+    fmt = "%10s %6s %4s %17s %8s %9s"
+
     YN = lambda x: 'Y' if x else 'N'
 
     if headers:
-        print(fmt % ('subdir', 'rem_ok', 'mods', 'last'))
+        print(fmt % ('subdir', 'rem_ok', 'mods', 'last', 'files', 'size'))
         return
 
     print(fmt % (
-        os.path.basename(info['subdir']), YN(not info['remote_differs']),
-        YN(info['mods']), info['latest'],
+        os.path.basename(info['subdir']), 
+        YN(not info['remote_differs']),
+        YN(info['mods']), 
+        time_fmt(info['latest']),
+        info['file_count'],
+        sizeof_fmt(info['bytes']),
+        
     ))
+
+def sizeof_fmt(num, suffix='B'):
+    # https://stackoverflow.com/a/1094933/1072212
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'Yi', suffix)
+
+def time_fmt(t):
+    """time_fmt - format time
+
+    :param float t: time to format
+    :return: formatted time
+    :rtype: str
+    """
+
+    return time.strftime("%a %b %d, %H:%M", time.localtime(t))
 
 def main():
     opt = get_options()
+    info = check_paths(SETS, opt.set, opt.instance)
+    shelf['obs'].setdefault(opt.set, {})[opt.instance] = {
+        'updated': time.time(),
+        'subdirs': info,
+    }
+    for instance in shelf['obs'][opt.set]:
+        if instance == opt.instance:
+            continue
+        obs = shelf['obs'][opt.set][instance]
+        print("%s %s" % (instance, time_fmt(obs['updated'])))
+        for subdir in obs['subdirs']:
+            print_info(subdir)
 
-    # con, cur = get_concur()
-
-    check_paths(SETS, 'nearshore', 'epadt')
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    finally:
+        json.dump(shelf, open(json_state_file, 'w'), indent=4)
+
