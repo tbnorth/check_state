@@ -9,10 +9,10 @@ import argparse
 import os
 import shlex
 import sqlite3
-from subprocess import Popen, PIPE
-import sys
+import time
 
-from collections import namedtuple, defaultdict
+from collections import defaultdict
+from subprocess import Popen, PIPE
 
 n3m_list = 'nnm2', 'nnnmp0', 'pypanart'
 
@@ -51,6 +51,7 @@ def check_paths(db, set, instance):
     """
 
     cur_path = None
+    print_info(headers=True)
     for entry in db['set'][set]['instances'][instance]['folders']:
         not_list = not isinstance(entry, (tuple, list))
         if not_list and os.path.basename(entry) == '+':
@@ -66,9 +67,14 @@ def check_paths(db, set, instance):
                 continue
             if not os.path.isdir(subdir):
                 raise Exception("Path '%s' is not a directory" % subdir)
+            info = {
+                'set': set, 'instance': instance, 'subdir': subdir,
+                'date': time.asctime(),
+            }
+            info.update(get_file_stats(subdir))
             if os.path.exists(os.path.join(subdir, '.git')):
-                git_info = get_git_info(subdir)
-                print(git_info)
+                info.update(get_git_info(subdir))
+            print_info(info)
 def get_concur(filepath=None):
     """
     get_concur - get DB connection and cursor - may create ~/.check_state
@@ -89,6 +95,23 @@ def get_datafile():
     """
 
     return os.path.join(os.path.expanduser('~'), '.check_state', 'check_state.db')
+def get_file_stats(path):
+    """get_file_stats - get most recent modification time etc. for a directory tree
+
+    :param str path: top of directory tree
+    :return: {'latest': timestamp}
+    :rtype: dict
+    """
+
+    info = defaultdict(lambda: 0)
+    for subpath, dirs_, files in os.walk(path):
+        for filename in files:
+            info['file_count'] += 1
+            filepath = os.path.join(subpath, filename)
+            stat = os.stat(filepath)
+            info['latest'] = max(info['latest'], stat.st_mtime)
+            info['bytes'] += stat.st_size
+    return info
 def get_git_info(path):
     """get_git_info - git status in directory
 
@@ -104,7 +127,8 @@ def get_git_info(path):
     }
 
     for key in info:
-        proc = Popen(shlex.split('git -C "%s" %s' % (path, info[key])), stdout=PIPE)
+        proc = Popen(shlex.split('git -C "%s" %s' % (path, info[key])), 
+            stdout=PIPE, stderr=PIPE)
         info[key], _ = proc.communicate()
         info[key] = info[key].strip()
 
@@ -170,6 +194,25 @@ def make_parser():
 
     return parser
 
+
+def print_info(info=None, headers=False):
+    """print_info - print table of subpath statuses
+
+    :param dict info: info to print
+    :param bool headers: don't print info, just print headers
+    """
+
+    fmt = "% 10s % 6s % 4s % 20s"
+    YN = lambda x: 'Y' if x else 'N'
+
+    if headers:
+        print(fmt % ('subdir', 'rem_ok', 'mods', 'last'))
+        return
+
+    print(fmt % (
+        os.path.basename(info['subdir']), YN(not info['remote_differs']),
+        YN(info['mods']), info['latest'],
+    ))
 
 def main():
     opt = get_options()
