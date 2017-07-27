@@ -29,29 +29,6 @@ if not os.path.exists(json_state_file):
     json.dump({'obs':{}}, open(json_state_file, 'w'))
 shelf = json.load(open(json_state_file))
 
-SETS = {
-    'set': {
-        'nearshore': {
-            'instance': {
-                'otter': {
-                    'folders': [
-                        "/mnt/edata/edata/+",
-                        'tnbbib',
-                        n3m_list,
-                    ],
-                },
-                'epadt': {
-                    'folders': [
-                        r"d:\repo\+",
-                        'tnbbib',
-                        n3m_list,
-                    ],
-                },
-            },
-        },
-    },
-}
-
 
 def check_paths(db, set_, instance):
     """check_paths - check that the paths for an instance exist
@@ -64,6 +41,7 @@ def check_paths(db, set_, instance):
     """
 
     cur_path = None
+    print("")
     print_info(headers=True)
     states = []
     for entry in db['set'][set_]['instance'][instance]['folders']:
@@ -191,25 +169,15 @@ def get_options(args=None):
 
 
 
-class Formatter(
-    argparse.ArgumentDefaultsHelpFormatter,
-    argparse.RawDescriptionHelpFormatter): pass
-
 def make_parser():
     """build an argparse.ArgumentParser, don't call this directly,
        call get_options() instead.
     """
 
-    info = []
-    for set_ in SETS['set']:
-        info.append("    %s" % set_)
-        for instance in SETS['set'][set_]['instance']:
-            info.append("        %s" % instance)
-    info = '\n'.join(info)
-
     parser = argparse.ArgumentParser(
         description="Check the state of a set of related projects\n"
-        "Known sets / instances:\n\n" + info, formatter_class=Formatter
+        "Known sets / instances:\n\n",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     repo = "git@gitlab.com:%s/check_state_info.git" % getpass.getuser()
@@ -219,10 +187,10 @@ def make_parser():
     parser.add_argument("--list", action='store_true',
         help="List sets / instances from repo."
     )
-    parser.add_argument('set',
+    parser.add_argument('set', nargs='?',
         help="Set to check"
     )
-    parser.add_argument('instance',
+    parser.add_argument('instance', nargs='?',
         help="Instance to check"
     )
 
@@ -260,9 +228,14 @@ def pull_settings(opt):
 
     global settings_dir
     settings_dir = tempfile.mkdtemp()
+    print("[fetching settings from repo.]")
     cmd = shlex.split('git clone "%s" "%s"' % (opt.repo, settings_dir))
-    proc = Popen(cmd)
-    proc.communicate()
+    proc = Popen(cmd, stderr=PIPE)
+    _, err = proc.communicate()
+    if proc.returncode:
+        print("\nCloning git repo failed\n")
+        print(err)
+        exit(10)
     sets = json.load(open(os.path.join(settings_dir, "check_state_settings.json")))
     # expand ':foo' to sets['sub']['foo']
     for set_ in sets['set']:
@@ -287,14 +260,20 @@ def push_settings(others):
         open(os.path.join(settings_dir, "check_state_info.json"), 'w'),
         indent=0
     )
+    print("\n[storing results in repo.]")
     for cmd in [
         'git -C "%s" add check_state_info.json',
         'git -C "%s" commit -m "updated"',
         'git -C "%s" push',
     ]:
         cmd = shlex.split(cmd % settings_dir)
-        proc = Popen(cmd)
-        proc.communicate()
+        proc = Popen(cmd, stdout=PIPE, stderr=PIPE)
+        _, err = proc.communicate()
+        if proc.returncode:
+            print("\nGit command failed\n")
+            print(' '.join(cmd))
+            print(err)
+            exit(10)
 def time_fmt(t):
     """time_fmt - format time
 
@@ -319,6 +298,16 @@ def main():
     opt = get_options()
 
     sets, others = pull_settings(opt)
+
+    if opt.list:
+        print("\nKnown sets / instances\n")
+        info = []
+        for set_ in sets['set']:
+            info.append("%s" % set_)
+            for instance in sets['set'][set_]['instance']:
+                info.append("    %s" % instance)
+        print('\n'.join(info)+'\n')
+        return
 
     info = check_paths(sets, opt.set, opt.instance)
     others['obs'].setdefault(opt.set, {})[opt.instance] = {
