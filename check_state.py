@@ -5,6 +5,8 @@ check_state.py - check the state of a set of related projects
 Terry Brown, TerryNBrown@gmail.com, Mon Jul 24 15:13:32 2017
 """
 
+from __future__ import print_function
+
 import argparse
 import getpass
 import json
@@ -12,6 +14,7 @@ import os
 import shlex
 import shutil
 import sqlite3
+import sys
 import tempfile
 import time
 
@@ -42,7 +45,6 @@ def check_paths(db, set_, instance):
 
     cur_path = None
     print("")
-    print_info(headers=True)
     states = []
     for entry in db['set'][set_]['instance'][instance]['folders']:
         not_list = not isinstance(entry, (tuple, list))
@@ -65,8 +67,10 @@ def check_paths(db, set_, instance):
             info.update(get_file_stats(subdir))
             if os.path.exists(os.path.join(subdir, '.git')):
                 info.update(get_git_info(subdir))
-            print_info(info)
+            print(os.path.basename(subdir), end=', ')
+            sys.stdout.flush()
             states.append(info)
+    print("\n")
 
     return states
 def get_concur(filepath=None):
@@ -184,6 +188,9 @@ def make_parser():
     parser.add_argument("--repo", default=repo,
         help="Git repo. to store check_state settings / results"
     )
+    parser.add_argument("--no-store", action='store_true',
+        help="Don't update the repo. results on exit"
+    )
     parser.add_argument("--list", action='store_true',
         help="List sets / instances from repo."
     )
@@ -197,14 +204,14 @@ def make_parser():
     return parser
 
 
-def print_info(info=None, headers=False):
+def print_info(info=None, headers=False, latest=None):
     """print_info - print table of subpath statuses
 
     :param dict info: info to print
     :param bool headers: don't print info, just print headers
     """
 
-    fmt = "%10s %6s %4s %17s %8s %9s"
+    fmt = "%10s %6s %4s %18s %8s %9s"
 
     YN = lambda x: 'Y' if x else 'N'
 
@@ -212,14 +219,18 @@ def print_info(info=None, headers=False):
         print(fmt % ('subdir', 'rem_ok', 'mods', 'last', 'files', 'size'))
         return
 
+    # highligh latest modification time
+    this_latest = time_fmt(info['latest'])
+    this_latest += '*' if info['latest'] == latest else ' '
+
     print(fmt % (
-        os.path.basename(info['subdir']), 
+        # can't use os.path.basename() as data mixes paths from different OSs
+        info['subdir'].replace('\\', '/').rsplit('/', 1)[-1],
         YN(not info['remote_differs']),
-        YN(info['mods']), 
-        time_fmt(info['latest']),
+        YN(info['mods']),
+        this_latest,
         info['file_count'],
         sizeof_fmt(info['bytes']),
-        
     ))
 
 def pull_settings(opt):
@@ -314,17 +325,44 @@ def main():
         'updated': time.time(),
         'subdirs': info,
     }
-    for instance in others['obs'][opt.set]:
-        if instance == opt.instance:
-            continue
+    print_info(headers=True)
+    # sort this instance to the bottom of the list
+    keys = sorted(others['obs'][opt.set], key=lambda x: x == opt.instance)
+
+    # find latest file change for each subdir
+    latest = {}
+    for instance in keys:
+        obs = others['obs'][opt.set][instance]
+        for subdir in obs['subdirs']:
+            dir_ = subdir['subdir'].replace('\\', '/').rsplit('/', 1)[-1]
+            if dir_ in latest:
+                latest[dir_] = max(latest[dir_], subdir['latest'])
+            else:
+                latest[dir_] = subdir['latest']
+
+    for instance in keys:
         obs = others['obs'][opt.set][instance]
         print("%s %s" % (instance, time_fmt(obs['updated'])))
         for subdir in obs['subdirs']:
-            print_info(subdir)
+            dir_ = subdir['subdir'].replace('\\', '/').rsplit('/', 1)[-1]
+            print_info(subdir, latest=latest.get(dir_))
 
-    push_settings(others)
+    msg = "\nPossible remedies\n"
+    for subdir in info:
+        if subdir['remote_differs']:
+            print("%sgit -C '%s' pull" % (msg, subdir['subdir']))
+            msg = ""
+        if subdir['mods']:
+            print("%sgit -C '%s' commit -a && git -C '%s' push" % 
+                (msg, subdir['subdir'], subdir['subdir']))
+            msg = ""
+
+    if opt.no_store:
+        print("\n[NOT storing results to repo.]")
+    else:
+        push_settings(others)
+
     shutil.rmtree(settings_dir, ignore_errors=True)
-    exit()
 if __name__ == '__main__':
     try:
         main()
