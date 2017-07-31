@@ -266,7 +266,12 @@ def pull_settings(opt):
                 continue
         for instance in sets['set'][set_]['instance']:
             folders = sets['set'][set_]['instance'][instance]['folders']
-            folders[:] = [
+            if folders[0] == ':':
+                # same as another instance
+                sets['set'][set_]['instance'][instance]['folders'] = \
+                    sets['set'][set_]['instance'][folders[1:]]['folders']
+                continue
+            folders[:] = [  # replace lists
                 sets['sub'][i[1:]] if i[0] == ':' else i for i in folders
             ]
     others = os.path.join(settings_dir, "check_state_info.json")
