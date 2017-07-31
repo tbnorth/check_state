@@ -33,6 +33,17 @@ if not os.path.exists(json_state_file):
 shelf = json.load(open(json_state_file))
 
 
+def basename(path):
+    """basename - basename of path, where paths are from different
+    OSs, so os.path.basename doesn't work.
+
+    :param str path: path to basename
+    :return: basename
+    :rtype: str
+    """
+
+    return path.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1]
+
 def check_paths(db, set_, instance):
     """check_paths - check that the paths for an instance exist
 
@@ -204,19 +215,19 @@ def make_parser():
     return parser
 
 
-def print_info(info=None, headers=False, latest=None):
+def print_info(info=None, headers=False, latest=None, mark_commit=False):
     """print_info - print table of subpath statuses
 
     :param dict info: info to print
     :param bool headers: don't print info, just print headers
     """
 
-    fmt = "%10s %6s %4s %18s %8s %9s"
+    fmt = "%10s %6s %4s %18s %8s %9s %8s"
 
     YN = lambda x: 'Y' if x else 'N'
 
     if headers:
-        print(fmt % ('subdir', 'rem_ok', 'mods', 'last', 'files', 'size'))
+        print(fmt % ('subdir', 'rem_ok', 'mods', 'last', 'files', 'size', 'commit'))
         return
 
     # highligh latest modification time
@@ -225,12 +236,13 @@ def print_info(info=None, headers=False, latest=None):
 
     print(fmt % (
         # can't use os.path.basename() as data mixes paths from different OSs
-        info['subdir'].replace('\\', '/').rsplit('/', 1)[-1],
+        basename(info['subdir']),
         YN(not info['remote_differs']),
         YN(info['mods']),
         this_latest,
         info['file_count'],
         sizeof_fmt(info['bytes']),
+        info.get('commit', '')[:7] + ('*' if mark_commit else ' '),
     ))
 
 def pull_settings(opt):
@@ -330,22 +342,34 @@ def main():
     keys = sorted(others['obs'][opt.set], key=lambda x: x == opt.instance)
 
     # find latest file change for each subdir
+    # also check commits match
     latest = {}
+    commit = defaultdict(lambda: set())
     for instance in keys:
         obs = others['obs'][opt.set][instance]
         for subdir in obs['subdirs']:
-            dir_ = subdir['subdir'].replace('\\', '/').rsplit('/', 1)[-1]
+            dir_ = basename(subdir['subdir'])
+            commit[dir_].add(subdir['commit'])
             if dir_ in latest:
                 latest[dir_] = max(latest[dir_], subdir['latest'])
             else:
                 latest[dir_] = subdir['latest']
 
+    mixed_commits = set()
     for instance in keys:
         obs = others['obs'][opt.set][instance]
         print("%s %s" % (instance, time_fmt(obs['updated'])))
         for subdir in obs['subdirs']:
-            dir_ = subdir['subdir'].replace('\\', '/').rsplit('/', 1)[-1]
-            print_info(subdir, latest=latest.get(dir_))
+            dir_ = basename(subdir['subdir'])
+            if len(commit[dir_]) != 1:
+                mark_commit = True
+                mixed_commits.add(dir_)
+            else:
+                mark_commit = False
+            print_info(subdir, latest=latest.get(dir_), mark_commit=mark_commit)
+
+    if mixed_commits:
+        print("\nWARNING: mixed commits for: %s" % (', '.join(mixed_commits)))
 
     msg = "\nPossible remedies\n"
     for subdir in info:
