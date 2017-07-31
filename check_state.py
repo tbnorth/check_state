@@ -222,7 +222,7 @@ def print_info(info=None, headers=False, latest=None, mark_commit=False):
     :param bool headers: don't print info, just print headers
     """
 
-    fmt = "%10s %6s %4s %18s %8s %9s %8s"
+    fmt = "%15s %6s %4s %18s %8s %9s %8s"
 
     YN = lambda x: 'Y' if x else 'N'
 
@@ -262,6 +262,8 @@ def pull_settings(opt):
     sets = json.load(open(os.path.join(settings_dir, "check_state_settings.json")))
     # expand ':foo' to sets['sub']['foo']
     for set_ in sets['set']:
+        if set_ == "_TEMPLATE_":
+                continue
         for instance in sets['set'][set_]['instance']:
             folders = sets['set'][set_]['instance'][instance]['folders']
             folders[:] = [
@@ -327,6 +329,8 @@ def main():
         print("\nKnown sets / instances\n")
         info = []
         for set_ in sets['set']:
+            if set_ == "_TEMPLATE_":
+                continue
             info.append("%s" % set_)
             for instance in sets['set'][set_]['instance']:
                 info.append("    %s" % instance)
