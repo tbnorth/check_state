@@ -281,7 +281,8 @@ def push_settings(others):
     json.dump(
         others,
         open(os.path.join(settings_dir, "check_state_info.json"), 'w'),
-        indent=0
+        indent=0,
+        sort_keys=True  # minimizes git diffs
     )
     print("\n[storing results in repo.]")
     for cmd in [
