@@ -60,11 +60,15 @@ git -C '/mnt/edata/edata/tnbbib' pull
 ```
 
 The instance listed last, `otter`, is always the local instance (the one
-updated by this run of `check_state`.  The `tnbbib` component on otter is
+updated by this run of `check_state`).  The `tnbbib` component on otter is
 has a different `HEAD` than its remote, and a different commit than the
 other instances.  Remember the data for the other instances is dated, so
 they may be showing `Y` for `rem_ok` (remote OK), but still be out of date.
 In that case only the “mixed commits” warning would be given.
+
+Asterisks in the `last` column indicate the instance with the latest file
+modification time.  Asterisks in the commit column highlight mismatched
+commits.
 
 ## Configuration
 
