@@ -66,7 +66,7 @@ the repo. specified with `--repo`.  Here's an example:
                 },
                 "home": {
                     "folders": [
-                        "/mnt/data/data/+",
+                        "/mnt/data/+",
                         ":project1"
                     ]
                 }
@@ -76,8 +76,8 @@ the repo. specified with `--repo`.  Here's an example:
             "instance": {
                 "home": {
                     "folders": [
-                        "/mnt/data/data/+",
-                        ":multiscale"
+                        "/mnt/moredata/+",
+                        ":project2"
                     ]
                 },
                 "laptop": {
@@ -89,7 +89,42 @@ the repo. specified with `--repo`.  Here's an example:
 }
 ```
 
+`sub` is a dictionary of lists that can be used when a project uses
+multiple subfolders in a common root folder (examples follow).
+
+`set` is a dictionary of projects.  `_TEMPLATE_` is a special entry that
+can be copy / pasted for new projects.  `check_state.py` ignores it when
+listsing projects.  Other entries in `set` are the names of projects known
+to `check_state`.  The names used in `subs` don't have to match the project
+names, but it's convenient if they do.  Each project has an `instance`
+dictionary of known instances (home, work, etc.) of the project.  Each
+instance is in turn a dictionary with a `folders` entry which lists the
+paths (folders) used by the instance of the project.
+
+Absolute paths ending in `+` are used a base path for subsequent
+relative paths.  `folders` entries starting with `:` are replaced with the
+list from `subs`.  So for `project1` the list of folders expands to either
+
+```
+d:\somepath\folder1 d:\somepath\folder2 d:\somepath\folder3 d:\somepath\folder4
+d:\somepath\extra_folder c:\absolute\extrafolder
+```
+
+or
+
+```
+/mnt/data/folder1 /mnt/data/folder2 /mnt/data/folder3 /mnt/data/folder4
+```
+
+for the `work` and `home` instances respectively.
+
+If two instances of a project have exactly the same layout (same common
+base folder etc.), e.g. `project2`, the `folder` element for one instance
+can just reference a different instance.  In this case `folder` is a string
+starting with `:` rather than a list.
+
 ## To do
 
+ - [ ] local config. to store the `--repo` setting
  - [ ] time based local caching (e.g. 10 minutes) to save re-fetching settings
  - [ ] optionally don't save results to repo. when problems seen
