@@ -119,8 +119,8 @@ or
 for the `work` and `home` instances respectively.
 
 If two instances of a project have exactly the same layout (same common
-base folder etc.), e.g. `project2`, the `folder` element for one instance
-can just reference a different instance.  In this case `folder` is a string
+base folder etc.), e.g. `project2`, the `folders` element for one instance
+can just reference a different instance.  In this case `folders` is a string
 starting with `:` rather than a list.
 
 ## To do
