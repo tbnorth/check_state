@@ -25,6 +25,47 @@ optional arguments:
   --list       List sets / instances from repo. (default: False)
 ```
 
+## Example output
+
+```
+python check_state.py --repo git@gitlab.com:example/check_state_info.git nearshore otter
+[fetching settings from repo.]
+
+nnnmp0, pypanart, nnm2, tnbbib, 
+
+         subdir rem_ok mods               last    files      size   commit
+edata Mon Jul 31, 10:42
+         tnbbib      Y    N Tue Jul 25, 16:33         6  815.4KiB 677b745*
+         nnnmp0      Y    N Tue Jul 25, 16:26        75   22.3MiB 170bea2 
+       pypanart      Y    N Tue Jul 25, 12:36*       38    3.7MiB 14c5446 
+           nnm2      Y    N Tue Jul 18, 10:59       138   12.9MiB 9a33683 
+epadt Mon Jul 31, 10:53
+         tnbbib      Y    N Fri Jul 28, 10:54*       47   97.3MiB 677b745*
+         nnnmp0      Y    N Wed Jul 26, 11:59        98   61.6MiB 170bea2 
+       pypanart      Y    N Mon Jul 24, 16:23        35    2.9MiB 14c5446 
+           nnm2      Y    N Thu Jul 20, 12:54     25131   77.5GiB 9a33683 
+otter Wed Aug 02, 14:09
+         nnnmp0      Y    N Fri Jul 28, 09:54*       66   17.4MiB 170bea2 
+       pypanart      Y    N Fri Jul 21, 11:06        36    3.0MiB 14c5446 
+           nnm2      Y    N Fri Jul 28, 09:54*       60    3.3MiB 9a33683 
+         tnbbib      N    N Fri Jul 28, 09:58         9    4.4MiB ec7fd72*
+
+WARNING: mixed commits for: tnbbib
+
+Possible remedies
+git -C '/mnt/edata/edata/tnbbib' pull
+
+[storing results in repo.]
+
+```
+
+The instance listed last, `otter`, is always the local instance (the one
+updated by this run of `check_state`.  The `tnbbib` component on otter is
+has a different `HEAD` than its remote, and a different commit than the
+other instances.  Remember the data for the other instances is dated, so
+they may be showing `Y` for `rem_ok` (remote OK), but still be out of date.
+In that case only the “mixed commits” warning would be given.
+
 ## Configuration
 
 The config. file should be called `check_state_settings.json` and stored in
