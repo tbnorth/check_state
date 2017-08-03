@@ -134,11 +134,12 @@ def get_git_info(path):
 
     # {foo} replaced with info['foo'], so order matters
     info = OrderedDict([
-        ('commit', 'rev-parse HEAD'),
-        ('branch', 'rev-parse --abbrev-ref HEAD'),
-        ('commit_time', "rev-list --format=format:'%ci' --max-count=1 {commit}"),
-        ('mods', 'diff-index HEAD --'),
-        ('remotes', 'ls-remote'),
+        ('commit', 'rev-parse HEAD'),  # commit hash
+        ('branch', 'rev-parse --abbrev-ref HEAD'),  # branch name
+        # unix time of commit
+        ('commit_time', "rev-list --format=format:'%ct' --max-count=1 {commit}"),
+        ('mods', 'diff-index HEAD --'),  # detect uncommitted changes
+        ('remotes', 'ls-remote'),  # list of remote commit hashes
     ])
 
     for key in info:
@@ -153,7 +154,7 @@ def get_git_info(path):
 
     info['mods'] = info['mods'] or None
 
-    info['commit_time'] = info['commit_time'].split('\n')[1][5:16].replace('-', '/').replace(' ', '-')
+    info['commit_time'] = float(info['commit_time'].split('\n')[1])
 
     info['remote_differs'] = False
     if info['remotes']:
@@ -231,28 +232,32 @@ def print_info(info=None, headers=False, latest=None, mark_commit=False):
     :param bool headers: don't print info, just print headers
     """
 
-    fmt = "%15s %6s %4s %12s %8s %9s %8s %12s"
+    fmt = "%15s %6s %4s %8s %9s %8s %12s"
 
     YN = lambda x: 'Y' if x else 'N'
 
     if headers:
-        print(fmt % ('subdir', 'rem_ok', 'mods', 'last', 'files', 'size', 'commit', 'commit_time'))
+        print(fmt % ('subdir', 'rem_ok', 'mods', 'files', 'size', 'commit', 'commit_time'))
         return
 
     # highligh latest modification time
     this_latest = time_fmt(info['latest'])
     this_latest += '*' if info['latest'] == latest else ' '
 
+    commit_time = info.get('commit_time', '')
+    if commit_time:
+        commit_time = time_fmt(commit_time)
+
     print(fmt % (
         # can't use os.path.basename() as data mixes paths from different OSs
         basename(info['subdir']),
         YN(not info['remote_differs']),
         YN(info['mods']),
-        this_latest,
+        # this_latest,
         info['file_count'],
         sizeof_fmt(info['bytes']),
         info.get('commit', '')[:7] + ('*' if mark_commit else ' '),
-        info.get('commit_time', ''),
+        commit_time,
     ))
 
 def pull_settings(opt):
