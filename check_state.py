@@ -11,6 +11,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 import shlex
 import shutil
 import sqlite3
@@ -18,7 +19,7 @@ import sys
 import tempfile
 import time
 
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from subprocess import Popen, PIPE
 
 # GLOBAL
@@ -131,20 +132,28 @@ def get_git_info(path):
     :return: dict of info.
     """
 
-    info = {
-        'commit': 'rev-parse HEAD',
-        'branch': 'rev-parse --abbrev-ref HEAD',
-        'mods': 'diff-index HEAD --',
-        'remotes': 'ls-remote',
-    }
+    # {foo} replaced with info['foo'], so order matters
+    info = OrderedDict([
+        ('commit', 'rev-parse HEAD'),
+        ('branch', 'rev-parse --abbrev-ref HEAD'),
+        ('commit_time', "rev-list --format=format:'%ci' --max-count=1 {commit}"),
+        ('mods', 'diff-index HEAD --'),
+        ('remotes', 'ls-remote'),
+    ])
 
     for key in info:
-        proc = Popen(shlex.split('git -C "%s" %s' % (path, info[key])), 
+        cmd = info[key]
+        for subst in re.finditer(r"\{[a-z]+}", cmd):
+            subst = subst.group()
+            cmd = cmd.replace(subst, info[subst.strip('{}')])
+        proc = Popen(shlex.split('git -C "%s" %s' % (path, cmd)),
             stdout=PIPE, stderr=PIPE)
         info[key], _ = proc.communicate()
         info[key] = info[key].strip()
 
     info['mods'] = info['mods'] or None
+
+    info['commit_time'] = info['commit_time'].split('\n')[1][5:16].replace('-', '/').replace(' ', '-')
 
     info['remote_differs'] = False
     if info['remotes']:
@@ -222,12 +231,12 @@ def print_info(info=None, headers=False, latest=None, mark_commit=False):
     :param bool headers: don't print info, just print headers
     """
 
-    fmt = "%15s %6s %4s %18s %8s %9s %8s"
+    fmt = "%15s %6s %4s %12s %8s %9s %8s %12s"
 
     YN = lambda x: 'Y' if x else 'N'
 
     if headers:
-        print(fmt % ('subdir', 'rem_ok', 'mods', 'last', 'files', 'size', 'commit'))
+        print(fmt % ('subdir', 'rem_ok', 'mods', 'last', 'files', 'size', 'commit', 'commit_time'))
         return
 
     # highligh latest modification time
@@ -243,6 +252,7 @@ def print_info(info=None, headers=False, latest=None, mark_commit=False):
         info['file_count'],
         sizeof_fmt(info['bytes']),
         info.get('commit', '')[:7] + ('*' if mark_commit else ' '),
+        info.get('commit_time', ''),
     ))
 
 def pull_settings(opt):
@@ -313,7 +323,7 @@ def time_fmt(t):
     :rtype: str
     """
 
-    return time.strftime("%a %b %d, %H:%M", time.localtime(t))
+    return time.strftime("%m/%d-%H:%M", time.localtime(t))
 
 def sizeof_fmt(num, suffix='B'):
     # https://stackoverflow.com/a/1094933/1072212
