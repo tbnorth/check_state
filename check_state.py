@@ -98,7 +98,7 @@ def expand_folders(db, set_, instance):
         not_list = not isinstance(entry, (tuple, list))
         if not_list and basename(entry) == '+':
             # a new base path for relative paths
-            cur_path = dirname(entry)
+            cur_path = entry.rstrip('+/\\')
             continue
         subdirs = [entry] if not_list else entry
         for subdir in subdirs:
@@ -111,7 +111,6 @@ def expand_folders(db, set_, instance):
             folders.append(subdir)
 
     return folders
-
 def get_file_stats(path):
     """get_file_stats - get most recent modification time etc. for a directory tree
 
@@ -209,7 +208,9 @@ def get_options(args=None):
     # modifications / validations go here
 
     # fix MinGW shell mangling  FIXME: breaks Windows paths to local repos
-    opt.repo = opt.repo.replace('\\', '/').replace(':/', '://')
+    opt.repo = opt.repo.replace('\\', '/')
+    if '://' not in opt.repo:  # comes through correctly from JSON
+        opt.repo = opt.repo.replace(':/', '://')
 
     return opt
 
@@ -255,7 +256,6 @@ def set_set_instance(opt, config, sets):
             exit(10)
         if len(choices) == 1:
             opt.set, opt.instance = choices[0]
-            config['instance']
             print("\nGuessing project / instance '%s' / '%s' from folder" % (
                 opt.set, opt.instance))
             assert choices[0] not in seen
@@ -461,7 +461,7 @@ def main():
             else:
                 latest[dir_] = subdir['latest']
 
-    mixed_commits = set()
+    mixed_commits = set()  # to see if there are any in commit from above
     for instance in keys:
         obs = others['obs'][opt.set][instance]
         print("%s %s" % (instance, time_fmt(obs['updated'])))
