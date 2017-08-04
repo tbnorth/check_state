@@ -20,6 +20,7 @@ import tempfile
 import time
 
 from collections import defaultdict, OrderedDict
+from copy import deepcopy
 from subprocess import Popen, PIPE
 
 # GLOBAL
@@ -45,6 +46,17 @@ def basename(path):
 
     return path.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1]
 
+def dirname(path):
+    """dirname - dirname of path, where paths are from different
+    OSs, so os.path.dirname doesn't work.
+
+    :param str path: path to dirname
+    :return: dirname
+    :rtype: str
+    """
+
+    return path.replace('\\', '/').rstrip('/').rsplit('/', 1)[-2]
+
 def check_paths(db, set_, instance):
     """check_paths - check that the paths for an instance exist
 
@@ -55,56 +67,51 @@ def check_paths(db, set_, instance):
     :rtype: bool
     """
 
-    cur_path = None
     print("")
     states = []
+
+    print("%s/%s: " % (set_, instance), end='')
+    for subdir in expand_folders(db, set_, instance):
+        if not os.path.exists(subdir):
+            print("\nNo path '%s'" % subdir)
+            continue
+        if not os.path.isdir(subdir):
+            raise Exception("\nPath '%s' is not a directory" % subdir)
+        info = {
+            'set': set_, 'instance': instance, 'subdir': subdir,
+        }
+        info.update(get_file_stats(subdir))
+        if os.path.exists(os.path.join(subdir, '.git')):
+            info.update(get_git_info(subdir))
+        print(os.path.basename(subdir), end=', ')
+        sys.stdout.flush()
+        states.append(info)
+    print("\n")
+
+    return states
+def expand_folders(db, set_, instance):
+
+    folders = []
+    cur_path = None
+
     for entry in db['set'][set_]['instance'][instance]['folders']:
         not_list = not isinstance(entry, (tuple, list))
-        if not_list and os.path.basename(entry) == '+':
+        if not_list and basename(entry) == '+':
             # a new base path for relative paths
-            cur_path = os.path.dirname(entry)
+            cur_path = dirname(entry)
             continue
         subdirs = [entry] if not_list else entry
         for subdir in subdirs:
             if not os.path.isabs(subdir):
+                if not cur_path:
+                    raise Exception(
+                        "Relative path '%s' before any base path in '%s/%s'" % (
+                        subdir, set_, instance))
                 subdir = os.path.join(cur_path, subdir)
-            if not os.path.exists(subdir):
-                print("No path '%s'" % subdir)
-                continue
-            if not os.path.isdir(subdir):
-                raise Exception("Path '%s' is not a directory" % subdir)
-            info = {
-                'set': set_, 'instance': instance, 'subdir': subdir,
-            }
-            info.update(get_file_stats(subdir))
-            if os.path.exists(os.path.join(subdir, '.git')):
-                info.update(get_git_info(subdir))
-            print(os.path.basename(subdir), end=', ')
-            sys.stdout.flush()
-            states.append(info)
-    print("\n")
+            folders.append(subdir)
 
-    return states
-def get_concur(filepath=None):
-    """
-    get_concur - get DB connection and cursor - may create ~/.check_state
+    return folders
 
-    :param str filepath: optional path to data file
-    :return: connection and cursor
-    :rtype: tuple
-    """
-
-    filepath = filepath or get_datafile()
-    filedir = os.path.dirname(filepath)
-    if not os.path.exists(filedir):
-        os.mkdir(filedir)
-    con = sqlite3.connect(filepath)
-    return con, con.cursor()
-def get_datafile():
-    """get_datafile - get name of DB
-    """
-
-    return os.path.join(os.path.expanduser('~'), '.check_state', 'check_state.db')
 def get_file_stats(path):
     """get_file_stats - get most recent modification time etc. for a directory tree
 
@@ -168,6 +175,22 @@ def get_git_info(path):
     del info['remotes']
 
     return info
+def get_local_config():
+    """get_local_config - read local config. file, return dict.
+
+    Not to be confused with the "main" config. (sets) returned by pull_settings,
+    and stored in a (probably) remote git repo.
+    """
+    path = os.path.expanduser(os.path.join("~", ".check_state"))
+    if not os.path.exists(path):
+        os.mkdir(path)
+    path = os.path.join(path, "check_state.conf.json")
+    if os.path.exists(path):
+        with open(path) as config:
+            config = json.load(config)
+    else:
+        config = {}
+    return config
 def get_options(args=None):
     """
     get_options - use argparse to parse args, and return a
@@ -185,7 +208,7 @@ def get_options(args=None):
 
     # modifications / validations go here
 
-    # fix MinGW shell mangling
+    # fix MinGW shell mangling  FIXME: breaks Windows paths to local repos
     opt.repo = opt.repo.replace('\\', '/').replace(':/', '://')
 
     return opt
@@ -194,6 +217,57 @@ def get_options(args=None):
 
 
 
+def set_set_instance(opt, config, sets):
+    """set_set_instance - guess and update set and instance if not set in opt,
+    also update config.
+
+    `set` and `instance` are positional parameters, so you can set instance
+    without setting set.
+
+    :param argparse.Namespace opt: options from command line
+    :param dict config: from get_local_config()
+    :param dict sets: main check_state config. stored in repo.
+    """
+
+    cwd = os.getcwd()
+    choices = []
+    seen = config.setdefault('seen', [])
+
+    if not opt.instance:  # try to guess based on path
+        for set_ in sets['set']:
+            if set_ == '_TEMPLATE_' or opt.set and set_ != opt.set:
+                continue
+            for instance in sets['set'][set_]['instance']:
+                folders = expand_folders(sets, set_, instance)
+                folders = [os.path.realpath(i) for i in folders]
+                choice = [set_, instance]  # must use list, stored in JSON
+                if cwd in folders:
+                    if choice in seen:
+                        opt.set, opt.instance = choice
+                        return
+                    choices.append(choice)
+        if len(choices) > 1:
+            print("\nPath exists in multiple instances")
+            print("Please run one of the following to set for this machine\n")
+            for set_, instance in choices:
+                print("python %s --repo %s %s %s" % (sys.argv[0], opt.repo, set_, instance))
+            print("")
+            exit(10)
+        if len(choices) == 1:
+            opt.set, opt.instance = choices[0]
+            config['instance']
+            print("\nGuessing project / instance '%s' / '%s' from folder" % (
+                opt.set, opt.instance))
+            assert choices[0] not in seen
+            seen.append(choices[0])
+            return
+        else:
+            print("\nCan't guess project / instance from current folder")
+            exit(10)
+    else:
+        choice = [opt.set, opt.instance]
+        if choice not in seen:
+            seen.append(choice)
 def make_parser():
     """build an argparse.ArgumentParser, don't call this directly,
        call get_options() instead.
@@ -206,6 +280,7 @@ def make_parser():
     )
 
     repo = "git@gitlab.com:%s/check_state_info.git" % getpass.getuser()
+    repo = get_local_config().get('repo') or repo
     parser.add_argument("--repo", default=repo,
         help="Git repo. to store check_state settings / results"
     )
@@ -357,6 +432,12 @@ def main():
         print('\n'.join(info)+'\n')
         return
 
+    config = get_local_config()
+    orig_config = deepcopy(config)
+    config['repo'] = opt.repo  # which possibly came from config, see make_parser()
+
+    set_set_instance(opt, config, sets)  # guess opt.set and opt.instance if not set
+
     info = check_paths(sets, opt.set, opt.instance)
     others['obs'].setdefault(opt.set, {})[opt.instance] = {
         'updated': time.time(),
@@ -399,7 +480,7 @@ def main():
     msg = "\nPossible remedies\n"
     for subdir in info:
         if subdir['remote_differs']:
-            print("%sgit -C '%s' pull" % (msg, subdir['subdir']))
+            print("%sgit -C '%s' pull  # or maybe push" % (msg, subdir['subdir']))
             msg = ""
         if subdir['mods']:
             print("%sgit -C '%s' commit -a && git -C '%s' push" % 
@@ -412,6 +493,15 @@ def main():
         push_settings(others)
 
     shutil.rmtree(settings_dir, ignore_errors=True)
+
+    if config != orig_config:
+        print("Updating local config.")
+        json.dump(
+            config,
+            open(os.path.expanduser(os.path.join(
+                "~", ".check_state", "check_state.conf.json")), 'w'),
+            indent=4
+        )
 if __name__ == '__main__':
     try:
         main()
