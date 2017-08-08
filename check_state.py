@@ -34,7 +34,6 @@ if not os.path.exists(json_state_file):
     json.dump({'obs':{}}, open(json_state_file, 'w'))
 shelf = json.load(open(json_state_file))
 
-
 def basename(path):
     """basename - basename of path, where paths are from different
     OSs, so os.path.basename doesn't work.
@@ -89,6 +88,32 @@ def check_paths(db, set_, instance):
     print("\n")
 
     return states
+
+def do_list(opt, sets, others):
+    """Just list known sets / instances"""
+    print("\nKnown sets / instances\n")
+    info = []
+    for set_ in sets['set']:
+        if set_ == "_TEMPLATE_":
+            continue
+        info.append("%s" % set_)
+        for instance in sets['set'][set_]['instance']:
+            info.append("    %s" % instance)
+    print('\n'.join(info)+'\n')
+    return
+def do_show_stored(opt, sets, others):
+    """Just list resutls"""
+    print("\nStored results\n")
+    info = []
+    for set_ in sets['set']:
+        if set_ == "_TEMPLATE_":
+            continue
+        info.append("%s" % set_)
+        for instance in sets['set'][set_]['instance']:
+            info.append("    %s" % instance)
+    print('\n'.join(info)+'\n')
+    return
+
 def expand_folders(db, set_, instance):
 
     folders = []
@@ -111,6 +136,7 @@ def expand_folders(db, set_, instance):
             folders.append(subdir)
 
     return folders
+
 def get_file_stats(path):
     """get_file_stats - get most recent modification time etc. for a directory tree
 
@@ -131,6 +157,7 @@ def get_file_stats(path):
                 info['latest_file'] = filepath
             info['bytes'] += stat.st_size
     return info
+
 def get_git_info(path):
     """get_git_info - git status in directory
 
@@ -174,6 +201,7 @@ def get_git_info(path):
     del info['remotes']
 
     return info
+
 def get_local_config():
     """get_local_config - read local config. file, return dict.
 
@@ -190,6 +218,7 @@ def get_local_config():
     else:
         config = {}
     return config
+
 def get_options(args=None):
     """
     get_options - use argparse to parse args, and return a
@@ -213,10 +242,6 @@ def get_options(args=None):
         opt.repo = opt.repo.replace(':/', '://')
 
     return opt
-
-
-
-
 
 def set_set_instance(opt, config, sets):
     """set_set_instance - guess and update set and instance if not set in opt,
@@ -268,6 +293,7 @@ def set_set_instance(opt, config, sets):
         choice = [opt.set, opt.instance]
         if choice not in seen:
             seen.append(choice)
+
 def make_parser():
     """build an argparse.ArgumentParser, don't call this directly,
        call get_options() instead.
@@ -290,6 +316,10 @@ def make_parser():
     parser.add_argument("--list", action='store_true',
         help="List sets / instances from repo."
     )
+    parser.add_argument("--show-stored", action='store_true',
+        help="Don't re-analyze, just show stored results. "
+             "Without `set`, show all sets."
+    )
     parser.add_argument('set', nargs='?',
         help="Set to check"
     )
@@ -298,7 +328,6 @@ def make_parser():
     )
 
     return parser
-
 
 def print_info(info=None, headers=False, latest=None, mark_commit=False):
     """print_info - print table of subpath statuses
@@ -370,6 +399,7 @@ def pull_settings(opt):
     else:
         others = {'obs':{}}
     return sets, others
+
 def push_settings(others):
     """fetch_settings - get settings from git
     """
@@ -395,6 +425,7 @@ def push_settings(others):
             print(' '.join(cmd))
             print(err)
             exit(10)
+
 def time_fmt(t):
     """time_fmt - format time
 
@@ -421,15 +452,10 @@ def main():
     sets, others = pull_settings(opt)
 
     if opt.list:
-        print("\nKnown sets / instances\n")
-        info = []
-        for set_ in sets['set']:
-            if set_ == "_TEMPLATE_":
-                continue
-            info.append("%s" % set_)
-            for instance in sets['set'][set_]['instance']:
-                info.append("    %s" % instance)
-        print('\n'.join(info)+'\n')
+        do_list(opt, sets, others)
+        return
+    if opt.show_stored:
+        do_show_stored(opt, sets, others)
         return
 
     config = get_local_config()
@@ -483,7 +509,7 @@ def main():
             print("%sgit -C '%s' pull  # or maybe push" % (msg, subdir['subdir']))
             msg = ""
         if subdir['mods']:
-            print("%sgit -C '%s' commit -a && git -C '%s' push" % 
+            print("%sgit -C '%s' commit -a && git -C '%s' push" %
                 (msg, subdir['subdir'], subdir['subdir']))
             msg = ""
 
@@ -502,9 +528,11 @@ def main():
                 "~", ".check_state", "check_state.conf.json")), 'w'),
             indent=4
         )
+
 if __name__ == '__main__':
     try:
         main()
     finally:
         json.dump(shelf, open(json_state_file, 'w'), indent=4)
+
 
