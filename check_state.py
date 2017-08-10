@@ -260,7 +260,17 @@ def set_set_instance(opt, config, sets):
     seen = config.setdefault('seen', [])
     opt.guessed_instance = False
 
-    if not opt.instance:  # try to guess based on path
+    if opt.set and opt.set not in sets['set']:
+        raise Exception("Project '%s' not known.\n%s" % (
+            opt.set, ' '.join([i for i in sets['set'] if i != '_TEMPLATE_'])))
+
+    if not opt.instance:  # try to guess based on path or project
+        if opt.set:
+            for instance in sets['set'][opt.set]:
+                if [opt.set, instance] in seen:
+                    opt.instance = instance
+                    opt.guessed_instance = True
+                    return
         for set_ in sets['set']:
             if set_ == '_TEMPLATE_' or opt.set and set_ != opt.set:
                 continue
@@ -516,6 +526,9 @@ def main():
     }
 
     show_results(sets, others, opt.set, opt.instance)
+    seen = config.setdefault('seen', [])
+    if [opt.set, opt.instance] not in seen:
+        seen.append([opt.set, opt.instance])
 
     if opt.no_store:
         print("\n[NOT storing results to repo.]")
