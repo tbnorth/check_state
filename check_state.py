@@ -106,7 +106,8 @@ def do_show_stored(opt, sets, others):
     """Just list results"""
 
     for set_ in sets['set']:
-        if opt.set and set_ != opt.set or set_ == '_TEMPLATE_':
+        if opt.set and not opt.guessed_instance and set_ != opt.set \
+           or set_ == '_TEMPLATE_':
             continue
         print("\nStored results: %s\n" % set_)
         show_results(sets, others, set_, opt.instance)
@@ -244,7 +245,7 @@ def get_options(args=None):
 
 def set_set_instance(opt, config, sets):
     """set_set_instance - guess and update set and instance if not set in opt,
-    also update config.
+    also update config.  Sets bool opt.guessed_instance.
 
     `set` and `instance` are positional parameters, so you can set instance
     without setting set.
@@ -257,6 +258,7 @@ def set_set_instance(opt, config, sets):
     cwd = os.getcwd()
     choices = []
     seen = config.setdefault('seen', [])
+    opt.guessed_instance = False
 
     if not opt.instance:  # try to guess based on path
         for set_ in sets['set']:
@@ -269,6 +271,7 @@ def set_set_instance(opt, config, sets):
                 if cwd in folders:
                     if choice in seen:
                         opt.set, opt.instance = choice
+                        opt.guessed_instance = True
                         return
                     choices.append(choice)
         if len(choices) > 1:
@@ -284,6 +287,7 @@ def set_set_instance(opt, config, sets):
                 opt.set, opt.instance))
             assert choices[0] not in seen
             seen.append(choices[0])
+            opt.guessed_instance = True
             return
         else:
             print("\nCan't guess project / instance from current folder")
@@ -469,14 +473,13 @@ def show_results(sets, others, set_, cur_instance):
     if cur_instance:
         msg = "\nPossible remedies\n"
         for subdir in others['obs'][set_][cur_instance]['subdirs']:
-            if subdir['remote_differs']:
-                print("%sgit -C '%s' pull  # or maybe push" % (msg, subdir['subdir']))
-                msg = ""
             if subdir['mods']:
                 print("%sgit -C '%s' commit -a && git -C '%s' push" %
                     (msg, subdir['subdir'], subdir['subdir']))
                 msg = ""
-
+            if subdir['remote_differs']:
+                print("%sgit -C '%s' pull  # or maybe push" % (msg, subdir['subdir']))
+                msg = ""
 def sizeof_fmt(num, suffix='B'):
     # https://stackoverflow.com/a/1094933/1072212
     for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
@@ -492,18 +495,19 @@ def main():
 
     sets, others = pull_settings(opt)
 
-    if opt.list:
-        do_list(opt, sets, others)
-        return
-    if opt.show_stored:
-        do_show_stored(opt, sets, others)
-        return
 
     config = get_local_config()
     orig_config = deepcopy(config)
     config['repo'] = opt.repo  # which possibly came from config, see make_parser()
 
     set_set_instance(opt, config, sets)  # guess opt.set and opt.instance if not set
+
+    if opt.list:
+        do_list(opt, sets, others)
+        return
+    if opt.show_stored:
+        do_show_stored(opt, sets, others)
+        return
 
     info = check_paths(sets, opt.set, opt.instance)
     others['obs'].setdefault(opt.set, {})[opt.instance] = {
