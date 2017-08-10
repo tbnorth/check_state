@@ -101,17 +101,16 @@ def do_list(opt, sets, others):
             info.append("    %s" % instance)
     print('\n'.join(info)+'\n')
     return
+
 def do_show_stored(opt, sets, others):
-    """Just list resutls"""
-    print("\nStored results\n")
-    info = []
+    """Just list results"""
+
     for set_ in sets['set']:
-        if set_ == "_TEMPLATE_":
+        if opt.set and set_ != opt.set or set_ == '_TEMPLATE_':
             continue
-        info.append("%s" % set_)
-        for instance in sets['set'][set_]['instance']:
-            info.append("    %s" % instance)
-    print('\n'.join(info)+'\n')
+        print("\nStored results: %s\n" % set_)
+        show_results(sets, others, set_, opt.instance)
+
     return
 
 def expand_folders(db, set_, instance):
@@ -289,11 +288,6 @@ def set_set_instance(opt, config, sets):
         else:
             print("\nCan't guess project / instance from current folder")
             exit(10)
-    else:
-        choice = [opt.set, opt.instance]
-        if choice not in seen:
-            seen.append(choice)
-
 def make_parser():
     """build an argparse.ArgumentParser, don't call this directly,
        call get_options() instead.
@@ -370,7 +364,7 @@ def pull_settings(opt):
 
     global settings_dir
     settings_dir = tempfile.mkdtemp()
-    print("[fetching settings from repo.]")
+    print("[get settings from: %s]" % opt.repo)
     cmd = shlex.split('git clone "%s" "%s"' % (opt.repo, settings_dir))
     proc = Popen(cmd, stderr=PIPE)
     _, err = proc.communicate()
@@ -397,7 +391,7 @@ def pull_settings(opt):
     if os.path.exists(others):
         others = json.load(open(others))
     else:
-        others = {'obs':{}}
+        others = {'obs': {}}
     return sets, others
 
 def push_settings(others):
@@ -436,6 +430,53 @@ def time_fmt(t):
 
     return time.strftime("%m/%d-%H:%M", time.localtime(t))
 
+def show_results(sets, others, set_, cur_instance):
+
+    print_info(headers=True)
+    # sort this instance to the bottom of the list
+    keys = sorted(others['obs'][set_], key=lambda x: x == cur_instance)
+
+    # find latest file change for each subdir
+    # also check commits match
+    latest = {}
+    commit = defaultdict(lambda: set())
+    for instance in keys:
+        obs = others['obs'][set_][instance]
+        for subdir in obs['subdirs']:
+            dir_ = basename(subdir['subdir'])
+            commit[dir_].add(subdir['commit'])
+            if dir_ in latest:
+                latest[dir_] = max(latest[dir_], subdir['latest'])
+            else:
+                latest[dir_] = subdir['latest']
+
+    mixed_commits = set()  # to see if there are any in commit from above
+    for instance in keys:
+        obs = others['obs'][set_][instance]
+        print("%s %s" % (instance, time_fmt(obs['updated'])))
+        for subdir in obs['subdirs']:
+            dir_ = basename(subdir['subdir'])
+            if len(commit[dir_]) != 1:
+                mark_commit = True
+                mixed_commits.add(dir_)
+            else:
+                mark_commit = False
+            print_info(subdir, latest=latest.get(dir_), mark_commit=mark_commit)
+
+    if mixed_commits:
+        print("\nWARNING: mixed commits for: %s" % (', '.join(mixed_commits)))
+
+    if cur_instance:
+        msg = "\nPossible remedies\n"
+        for subdir in others['obs'][set_][cur_instance]['subdirs']:
+            if subdir['remote_differs']:
+                print("%sgit -C '%s' pull  # or maybe push" % (msg, subdir['subdir']))
+                msg = ""
+            if subdir['mods']:
+                print("%sgit -C '%s' commit -a && git -C '%s' push" %
+                    (msg, subdir['subdir'], subdir['subdir']))
+                msg = ""
+
 def sizeof_fmt(num, suffix='B'):
     # https://stackoverflow.com/a/1094933/1072212
     for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
@@ -469,49 +510,8 @@ def main():
         'updated': time.time(),
         'subdirs': info,
     }
-    print_info(headers=True)
-    # sort this instance to the bottom of the list
-    keys = sorted(others['obs'][opt.set], key=lambda x: x == opt.instance)
 
-    # find latest file change for each subdir
-    # also check commits match
-    latest = {}
-    commit = defaultdict(lambda: set())
-    for instance in keys:
-        obs = others['obs'][opt.set][instance]
-        for subdir in obs['subdirs']:
-            dir_ = basename(subdir['subdir'])
-            commit[dir_].add(subdir['commit'])
-            if dir_ in latest:
-                latest[dir_] = max(latest[dir_], subdir['latest'])
-            else:
-                latest[dir_] = subdir['latest']
-
-    mixed_commits = set()  # to see if there are any in commit from above
-    for instance in keys:
-        obs = others['obs'][opt.set][instance]
-        print("%s %s" % (instance, time_fmt(obs['updated'])))
-        for subdir in obs['subdirs']:
-            dir_ = basename(subdir['subdir'])
-            if len(commit[dir_]) != 1:
-                mark_commit = True
-                mixed_commits.add(dir_)
-            else:
-                mark_commit = False
-            print_info(subdir, latest=latest.get(dir_), mark_commit=mark_commit)
-
-    if mixed_commits:
-        print("\nWARNING: mixed commits for: %s" % (', '.join(mixed_commits)))
-
-    msg = "\nPossible remedies\n"
-    for subdir in info:
-        if subdir['remote_differs']:
-            print("%sgit -C '%s' pull  # or maybe push" % (msg, subdir['subdir']))
-            msg = ""
-        if subdir['mods']:
-            print("%sgit -C '%s' commit -a && git -C '%s' push" %
-                (msg, subdir['subdir'], subdir['subdir']))
-            msg = ""
+    show_results(sets, others, opt.set, opt.instance)
 
     if opt.no_store:
         print("\n[NOT storing results to repo.]")
