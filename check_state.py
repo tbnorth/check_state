@@ -278,12 +278,17 @@ def set_set_instance(opt, config, sets):
                 folders = expand_folders(sets, set_, instance)
                 folders = [os.path.realpath(i) for i in folders]
                 choice = [set_, instance]  # must use list, stored in JSON
-                if cwd in folders:
-                    if choice in seen:
-                        opt.set, opt.instance = choice
-                        opt.guessed_instance = True
-                        return
-                    choices.append(choice)
+                levels = cwd.split(os.path.sep)
+                if levels[0][-1] == ':':
+                    levels[0] += '\\'
+                while levels:  # check parents
+                    if os.path.join(*levels) in folders:
+                        if choice in seen:
+                            opt.set, opt.instance = choice
+                            opt.guessed_instance = True
+                            return
+                        choices.append(choice)
+                    del levels[-1]
         if len(choices) > 1:
             print("\nPath exists in multiple instances")
             print("Please run one of the following to set for this machine\n")
