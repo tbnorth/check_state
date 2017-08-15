@@ -279,8 +279,10 @@ def set_set_instance(opt, config, sets):
                 folders = [os.path.realpath(i) for i in folders]
                 choice = [set_, instance]  # must use list, stored in JSON
                 levels = cwd.split(os.path.sep)
-                if levels[0][-1] == ':':
-                    levels[0] += '\\'
+                if levels[0] and levels[0][-1] == ':':
+                    levels[0] += '\\'  # Windows
+                elif levels[0] == '':
+                    levels[0] = '/'  # unix
                 while levels:  # check parents
                     if os.path.join(*levels) in folders:
                         if choice in seen:
