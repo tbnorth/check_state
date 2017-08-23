@@ -253,6 +253,7 @@ def set_set_instance(opt, config, sets):
     :param argparse.Namespace opt: options from command line
     :param dict config: from get_local_config()
     :param dict sets: main check_state config. stored in repo.
+    :returns: True is succeeds / unneeded, otherwise False
     """
 
     cwd = os.getcwd()
@@ -270,7 +271,7 @@ def set_set_instance(opt, config, sets):
                 if [opt.set, instance] in seen:
                     opt.instance = instance
                     opt.guessed_instance = True
-                    return
+                    return True
         for set_ in sets['set']:
             if set_ == '_TEMPLATE_' or opt.set and set_ != opt.set:
                 continue
@@ -288,7 +289,7 @@ def set_set_instance(opt, config, sets):
                         if choice in seen:
                             opt.set, opt.instance = choice
                             opt.guessed_instance = True
-                            return
+                            return True
                         choices.append(choice)
                     del levels[-1]
         if len(choices) > 1:
@@ -297,7 +298,7 @@ def set_set_instance(opt, config, sets):
             for set_, instance in choices:
                 print("python %s --repo %s %s %s" % (sys.argv[0], opt.repo, set_, instance))
             print("")
-            exit(10)
+            return False
         if len(choices) == 1:
             opt.set, opt.instance = choices[0]
             print("\nGuessing project / instance '%s' / '%s' from folder" % (
@@ -305,10 +306,13 @@ def set_set_instance(opt, config, sets):
             assert choices[0] not in seen
             seen.append(choices[0])
             opt.guessed_instance = True
-            return
+            return True
         else:
             print("\nCan't guess project / instance from current folder")
-            exit(10)
+            return False
+
+    return True
+
 def make_parser():
     """build an argparse.ArgumentParser, don't call this directly,
        call get_options() instead.
@@ -522,6 +526,10 @@ def main():
     if opt.list:
         do_list(opt, sets, others)
         return
+
+    if not opt.instance:
+        exit()
+
     if opt.show_stored:
         do_show_stored(opt, sets, others)
         return
