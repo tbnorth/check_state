@@ -56,6 +56,15 @@ def dirname(path):
 
     return path.replace('\\', '/').rstrip('/').rsplit('/', 1)[-2]
 
+def isabs(path):
+    """isabs - OS neutral os.path.isabs
+
+    :param str path: path to check
+    :return: True if path is absolute
+    :rtype: bool
+    """
+
+    return path.startswith('/') or len(path) > 1 and path[1] == ':'
 def check_paths(db, set_, instance):
     """check_paths - check that the paths for an instance exist
 
@@ -127,7 +136,7 @@ def expand_folders(db, set_, instance):
             continue
         subdirs = [entry] if not_list else entry
         for subdir in subdirs:
-            if not os.path.isabs(subdir):
+            if not isabs(subdir):
                 if not cur_path:
                     raise Exception(
                         "Relative path '%s' before any base path in '%s/%s'" % (
