@@ -348,19 +348,24 @@ def make_parser():
 
     return parser
 
-def print_info(info=None, headers=False, latest=None, mark_commit=False):
+def print_info(info=None, headers=False, latest=None, mark_commit=False,
+               mark_date=False):
     """print_info - print table of subpath statuses
 
     :param dict info: info to print
     :param bool headers: don't print info, just print headers
+    :param date latest: (NOT USED) latest date for file mod.
+    :param bool mark_commit: * commit to indicate mismatch
+    :param bool mark_date: * commit date to indicate latest
     """
 
-    fmt = "%15s %6s %4s %8s %9s %8s %12s"
+    fmt = "%15s %6s %4s %8s %9s %8s %13s"
 
     YN = lambda x: 'Y' if x else 'N'
 
     if headers:
         print(fmt % ('subdir', 'rem_ok', 'mods', 'files', 'size', 'commit', 'commit_time'))
+        print(fmt % ('', '', '', '', '', '*=mixed', '*=latest'))
         return
 
     # highligh latest modification time
@@ -380,7 +385,7 @@ def print_info(info=None, headers=False, latest=None, mark_commit=False):
         info['file_count'],
         sizeof_fmt(info['bytes']),
         info.get('commit', '')[:7] + ('*' if mark_commit else ' '),
-        commit_time,
+        commit_time + ('*' if mark_date else ' '),
     ))
 
 def pull_settings(opt):
@@ -461,19 +466,20 @@ def show_results(sets, others, set_, cur_instance):
     # sort this instance to the bottom of the list
     keys = sorted(others['obs'][set_], key=lambda x: x == cur_instance)
 
-    # find latest file change for each subdir
+    # find latest file change for each subdir ACROSS INSTANCES
     # also check commits match
-    latest = {}
-    commit = defaultdict(lambda: set())
+    latest_mod = defaultdict(lambda: set())  # latest file modification, not that useful
+    commit_date = defaultdict(lambda: set())  # latest (newest) commit date
+    commit = defaultdict(lambda: set())  # commit hashes for subdirs
     for instance in keys:
         obs = others['obs'][set_][instance]
         for subdir in obs['subdirs']:
             dir_ = basename(subdir['subdir'])
             commit[dir_].add(subdir['commit'])
-            if dir_ in latest:
-                latest[dir_] = max(latest[dir_], subdir['latest'])
-            else:
-                latest[dir_] = subdir['latest']
+            commit_date[dir_].add(subdir['commit_time'])
+            latest_mod[dir_].add(subdir['latest'])
+    max_commit_date = {k:max(commit_date[k]) for k in commit_date}
+    max_mod_date = {k:max(latest_mod[k]) for k in latest_mod}
 
     mixed_commits = set()  # to see if there are any in commit from above
     for instance in keys:
@@ -486,7 +492,12 @@ def show_results(sets, others, set_, cur_instance):
                 mixed_commits.add(dir_)
             else:
                 mark_commit = False
-            print_info(subdir, latest=latest.get(dir_), mark_commit=mark_commit)
+            print_info(
+                subdir,
+                latest=max_mod_date.get(dir_),
+                mark_commit=mark_commit,
+                mark_date=(subdir['commit_time'] == max_commit_date[dir_])
+            )
 
     if mixed_commits:
         print("\nWARNING: mixed commits for: %s" % (', '.join(mixed_commits)))
