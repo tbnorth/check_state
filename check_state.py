@@ -27,13 +27,6 @@ from subprocess import Popen, PIPE
 settings_dir = None  # set by tempfile.mkdtemp() in pull_settings()
 
 n3m_list = 'nnnmp0', 'pypanart', 'nnm2'
-
-
-json_state_file = "check_state_info.json"
-if not os.path.exists(json_state_file):
-    json.dump({'obs':{}}, open(json_state_file, 'w'))
-shelf = json.load(open(json_state_file))
-
 def basename(path):
     """basename - basename of path, where paths are from different
     OSs, so os.path.basename doesn't work.
@@ -404,7 +397,7 @@ def pull_settings(opt):
     global settings_dir
     settings_dir = tempfile.mkdtemp()
     print("[get settings from: %s]" % opt.repo)
-    cmd = shlex.split('git clone "%s" "%s"' % (opt.repo, settings_dir))
+    cmd = shlex.split('git clone --depth=1 "%s" "%s"' % (opt.repo, settings_dir))
     proc = Popen(cmd, stderr=PIPE)
     _, err = proc.communicate()
     if proc.returncode:
@@ -582,9 +575,5 @@ def main():
         )
 
 if __name__ == '__main__':
-    try:
-        main()
-    finally:
-        json.dump(shelf, open(json_state_file, 'w'), indent=4)
-
+    main()
 
