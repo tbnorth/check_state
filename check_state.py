@@ -141,6 +141,9 @@ def do_show_stored(opt, sets, others):
 
 def expand_folders(db, set_, instance):
 
+    if instance not in db['set'][set_]['instance']:
+        return []
+
     folders = []
     cur_path = None
 
