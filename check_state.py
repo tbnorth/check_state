@@ -577,6 +577,10 @@ def main():
 
     if opt.all:
         do_check_all(opt, sets, others, config)
+        if opt.no_store:
+            print("\n[NOT storing results to repo.]")
+        else:
+            push_settings(others)
         return
 
     do_check_one(opt, sets, others, config)
