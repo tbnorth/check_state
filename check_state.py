@@ -104,6 +104,28 @@ def do_list(opt, sets, others):
     print('\n'.join(info)+'\n')
     return
 
+def do_check_all(opt, sets, others, config):
+    """Check all projects"""
+
+    for set_ in sets['set']:
+        if set_ == '_TEMPLATE_':
+            continue
+        opt.set = set_
+        set_set_instance(opt, config, sets)
+        do_check_one(opt, sets, others, config)
+def do_check_one(opt, sets, others, config):
+
+    info = check_paths(sets, opt.set, opt.instance)
+    others['obs'].setdefault(opt.set, {})[opt.instance] = {
+        'updated': time.time(),
+        'subdirs': info,
+    }
+
+    show_results(sets, others, opt.set, opt.instance)
+    seen = config.setdefault('seen', [])
+    if [opt.set, opt.instance] not in seen:
+        seen.append([opt.set, opt.instance])
+
 def do_show_stored(opt, sets, others):
     """Just list results"""
 
@@ -341,6 +363,9 @@ def make_parser():
         help="Don't re-analyze, just show stored results. "
              "Without `set`, show all sets."
     )
+    parser.add_argument("--all", action='store_true',
+        help="Check all folders under all projects"
+    )
     parser.add_argument('set', nargs='?',
         help="Set to check"
     )
@@ -478,7 +503,7 @@ def show_results(sets, others, set_, cur_instance):
         for subdir in obs['subdirs']:
             dir_ = basename(subdir['subdir'])
             commit[dir_].add(subdir['commit'])
-            commit_date[dir_].add(subdir['commit_time'])
+            commit_date[dir_].add(subdir.get('commit_time'))
             latest_mod[dir_].add(subdir['latest'])
     max_commit_date = {k:max(commit_date[k]) for k in commit_date}
     max_mod_date = {k:max(latest_mod[k]) for k in latest_mod}
@@ -498,7 +523,7 @@ def show_results(sets, others, set_, cur_instance):
                 subdir,
                 latest=max_mod_date.get(dir_),
                 mark_commit=mark_commit,
-                mark_date=(subdir['commit_time'] == max_commit_date[dir_])
+                mark_date=(subdir.get('commit_time') == max_commit_date[dir_])
             )
 
     if mixed_commits:
@@ -529,7 +554,6 @@ def main():
 
     sets, others = pull_settings(opt)
 
-
     config = get_local_config()
     orig_config = deepcopy(config)
     config['repo'] = opt.repo  # which possibly came from config, see make_parser()
@@ -540,23 +564,18 @@ def main():
         do_list(opt, sets, others)
         return
 
-    if not opt.instance:
+    if not opt.instance and not opt.all:
         exit()
 
     if opt.show_stored:
         do_show_stored(opt, sets, others)
         return
 
-    info = check_paths(sets, opt.set, opt.instance)
-    others['obs'].setdefault(opt.set, {})[opt.instance] = {
-        'updated': time.time(),
-        'subdirs': info,
-    }
+    if opt.all:
+        do_check_all(opt, sets, others, config)
+        return
 
-    show_results(sets, others, opt.set, opt.instance)
-    seen = config.setdefault('seen', [])
-    if [opt.set, opt.instance] not in seen:
-        seen.append([opt.set, opt.instance])
+    do_check_one(opt, sets, others, config)
 
     if opt.no_store:
         print("\n[NOT storing results to repo.]")
