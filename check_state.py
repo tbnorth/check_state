@@ -112,6 +112,7 @@ def do_check_all(opt, sets, others, config):
             continue
         opt.set = set_
         set_set_instance(opt, config, sets)
+        opt.instance = opt.instance or opt.all
         do_check_one(opt, sets, others, config)
 def do_check_one(opt, sets, others, config):
 
@@ -363,8 +364,8 @@ def make_parser():
         help="Don't re-analyze, just show stored results. "
              "Without `set`, show all sets."
     )
-    parser.add_argument("--all", action='store_true',
-        help="Check all folders under all projects"
+    parser.add_argument("--all", metavar='INSTANCE',
+        help="Check all folders under all projects, use INSTANCE where unclear"
     )
     parser.add_argument('set', nargs='?',
         help="Set to check"
