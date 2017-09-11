@@ -337,6 +337,7 @@ def set_set_instance(opt, config, sets):
             return True
         else:
             print("\nCan't guess project / instance from current folder")
+            print("%s / %s" % (opt.set, opt.instance))
             return False
 
     return True
