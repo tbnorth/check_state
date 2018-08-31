@@ -538,11 +538,12 @@ def show_results(sets, others, set_, cur_instance):
         msg = "\nPossible remedies\n"
         for subdir in others['obs'][set_][cur_instance]['subdirs']:
             if subdir['mods']:
-                print("%sgit -C '%s' commit -a && git -C '%s' push" %
-                    (msg, subdir['subdir'], subdir['subdir']))
+                print("%scd '%s' && git diff && git commit -a && git push" %
+                    (msg, subdir['subdir']))
                 msg = ""
             if subdir['remote_differs']:
-                print("%sgit -C '%s' pull  # or maybe push" % (msg, subdir['subdir']))
+                print("%scd '%s' && git pull  # or maybe push" % 
+(msg, subdir['subdir']))
                 msg = ""
 def sizeof_fmt(num, suffix='B'):
     # https://stackoverflow.com/a/1094933/1072212
